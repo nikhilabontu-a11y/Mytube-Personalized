@@ -10,8 +10,11 @@ export default function App() {
   const [nextPage, setNextPage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isPlayerFullscreen, setIsPlayerFullscreen] = useState(false);
+  const [playerMessage, setPlayerMessage] = useState('');
 
   const loadingRef = useRef(false);
+  const playerRef = useRef(null);
 
   const loadVideos = useCallback(async (replace = false, pageToken = '') => {
     if (loadingRef.current) return;
@@ -108,6 +111,84 @@ export default function App() {
     };
   }, [loadVideos]);
 
+  // Track fullscreen changes, including exiting with Android back gesture.
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const fullscreen = document.fullscreenElement === playerRef.current;
+
+      setIsPlayerFullscreen(fullscreen);
+
+      if (!fullscreen) {
+        setPlayerMessage('');
+
+        if (
+          window.screen &&
+          window.screen.orientation &&
+          window.screen.orientation.unlock
+        ) {
+          window.screen.orientation.unlock();
+        }
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener(
+        'fullscreenchange',
+        handleFullscreenChange
+      );
+    };
+  }, []);
+
+  // Open video fullscreen and request landscape orientation.
+  const toggleVideoFullscreen = async () => {
+    setPlayerMessage('');
+
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      const player = playerRef.current;
+
+      if (!player) return;
+
+      if (!player.requestFullscreen) {
+        setPlayerMessage(
+          'Fullscreen is not supported by this browser.'
+        );
+        return;
+      }
+
+      await player.requestFullscreen();
+
+      if (
+        window.screen &&
+        window.screen.orientation &&
+        window.screen.orientation.lock
+      ) {
+        try {
+          await window.screen.orientation.lock('landscape');
+        } catch (orientationError) {
+          setPlayerMessage(
+            'Fullscreen opened. If needed, enable Auto-rotate on your phone.'
+          );
+        }
+      } else {
+        setPlayerMessage(
+          'Fullscreen opened. Use your phone Auto-rotate setting for landscape.'
+        );
+      }
+
+    } catch (err) {
+      setPlayerMessage(
+        'Could not open fullscreen. Please try again.'
+      );
+    }
+  };
+
   return (
     <main style={{
       minHeight: '100vh',
@@ -142,19 +223,23 @@ export default function App() {
 
       {selected && (
         <section>
-          <div style={{
-            position: 'relative',
-            width: '100%',
-            paddingTop: '56.25%',
-            background: '#000',
-            borderRadius: '12px',
-            overflow: 'hidden'
-          }}>
+          <div
+            ref={playerRef}
+            style={{
+              position: 'relative',
+              width: isPlayerFullscreen ? '100vw' : '100%',
+              height: isPlayerFullscreen ? '100vh' : 'auto',
+              paddingTop: isPlayerFullscreen ? 0 : '56.25%',
+              background: '#000',
+              borderRadius: isPlayerFullscreen ? 0 : '12px',
+              overflow: 'hidden'
+            }}
+          >
             <iframe
               key={selected.id}
               src={`https://www.youtube-nocookie.com/embed/${selected.id}`}
               title={selected.title}
-              allow="autoplay; encrypted-media; picture-in-picture"
+              allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
               allowFullScreen
               style={{
                 position: 'absolute',
@@ -165,6 +250,36 @@ export default function App() {
               }}
             />
           </div>
+
+          <button
+            onClick={toggleVideoFullscreen}
+            style={{
+              width: '100%',
+              padding: '13px',
+              marginTop: '10px',
+              background: '#c6a36a',
+              color: '#21170f',
+              border: 0,
+              borderRadius: '8px',
+              fontWeight: 'bold',
+              fontSize: '15px',
+              cursor: 'pointer'
+            }}
+          >
+            {isPlayerFullscreen
+              ? '✕ Exit Fullscreen'
+              : '⛶ Rotate / Fullscreen'}
+          </button>
+
+          {playerMessage && (
+            <p style={{
+              color: '#e5c17b',
+              fontSize: '13px',
+              textAlign: 'center'
+            }}>
+              {playerMessage}
+            </p>
+          )}
 
           <h3>{selected.title}</h3>
         </section>
